@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 export default function App() {
   const [rows, setRows] = useState([]);
@@ -140,7 +140,7 @@ export default function App() {
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>LIS → CSV Converter (User Mapping Mode)</h2>
+      <h2>Banner LIS → CSV Converter</h2>
 
       {/* Upload */}
       <div
