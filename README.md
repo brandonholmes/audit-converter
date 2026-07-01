@@ -1,16 +1,16 @@
-# React + Vite
+# Audit Converter
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This web app accepts a txt file created from the Banner Housing/Meal Assessment Audit report (.lis) and formats it into a CSV.
 
-Currently, two official plugins are available:
+## Using
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+To use the application
+1. Download the .lis assessment file from Banner.
+2. Modify the .lis file extension to .txt
+3. Upload the file to the application.
+4. When prompted, identify which Detail Codes are Housing, Meal Plans, or Other
+5. 
 
-## React Compiler
+## Disclaimer
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+This is an open source project that makes no guarantees on the quality or accuracy of the generated output. Use of this application is at users own risk and any errors or damages incurred from such are the responsibility of the user.
