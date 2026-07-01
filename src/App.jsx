@@ -1,10 +1,9 @@
-import { useState } from "react";
+import React, { useState } from "react";
 
 export default function App() {
   const [rows, setRows] = useState([]);
-  const [errors, setErrors] = useState([]);
-  const [codeMap, setCodeMap] = useState({});
   const [uniqueCodes, setUniqueCodes] = useState([]);
+  const [codeMap, setCodeMap] = useState({});
   const [mappingComplete, setMappingComplete] = useState(false);
 
   const parseFile = (text) => {
@@ -13,67 +12,129 @@ export default function App() {
     let currentStudentId = "";
     let currentLast = "";
     let currentFirst = "";
+    let hasTransaction = false;
 
     const parsed = [];
-    const errorList = [];
     const codesFound = new Set();
 
-    for (let line of lines) {
-      // ✅ Student header
-      const studentMatch = line.match(/^(\d{9})\s+(.+?),\s*(.+)$/);
-      if (studentMatch) {
-        currentStudentId = studentMatch[1];
-        currentLast = studentMatch[2].trim();
-        currentFirst = studentMatch[3].trim();
+    const pushEmptyStudent = () => {
+      if (currentStudentId && !hasTransaction) {
+        const studentErrors = [];
+
+        if (!/^\d{9}$/.test(currentStudentId)) {
+          studentErrors.push("Invalid Student ID");
+        }
+
+        parsed.push({
+          studentId: currentStudentId,
+          lastName: currentLast,
+          firstName: currentFirst,
+          tranNumber: "",
+          detailCode: "",
+          description: "",
+          amount: "",
+          effectiveDate: "",
+          errors: studentErrors,
+          warnings: ["No transactions"],
+        });
+      }
+    };
+
+    for (let rawLine of lines) {
+      const line = rawLine.trim();
+
+      // ✅ Skip noise
+      if (
+        !line ||
+        line.includes("PAGE") ||
+        line.includes("NET CHANGE") ||
+        line.includes("CONTINUED") ||
+        line.includes("Batch Room") ||
+        line.includes("HOUSING ASSESSMENTS")
+      ) {
         continue;
       }
 
-      // ✅ Transaction line
+      // ✅ FIXED student header (looser, but safe)
+      const studentMatch = line.match(/^(\d{5,})\s+(.+?),\s*(.+)$/);
+      if (studentMatch) {
+        pushEmptyStudent();
+
+        currentStudentId = studentMatch[1];
+        currentLast = studentMatch[2].trim();
+        currentFirst = studentMatch[3].trim();
+        hasTransaction = false;
+
+        continue;
+      }
+
+      // ✅ STRICT transaction parsing (don’t loosen this)
       const txnMatch = line.match(
-        /^\s*(\d+)\s+(\d+)\s+(.+?)\s+([\d,]+\.\d{2})\s+(\d{2}-[A-Z]{3}-\d{4})/
+        /^(\d+)\s+(\d+)\s+(.+?)\s+([\d,]*\.\d{2})?\s*(\d{2}-[A-Z]{3}-\d{4})?$/
       );
 
-      if (txnMatch) {
-        const detailCode = txnMatch[2];
-        codesFound.add(detailCode);
+      if (txnMatch && currentStudentId) {
+        hasTransaction = true;
 
         const row = {
           studentId: currentStudentId,
           lastName: currentLast,
           firstName: currentFirst,
-          tranNumber: txnMatch[1],
-          detailCode,
-          description: txnMatch[3].trim(),
-          amount: txnMatch[4].replace(/,/g, ""),
-          effectiveDate: txnMatch[5],
+          tranNumber: txnMatch[1] || "",
+          detailCode: txnMatch[2] || "",
+          description: (txnMatch[3] || "").trim(),
+          amount: (txnMatch[4] || "").replace(/,/g, ""),
+          effectiveDate: txnMatch[5] || "",
+          errors: [],
+          warnings: [],
         };
 
-        // ✅ Validation
-        const rowErrors = [];
-
-        if (!/^\d{9}$/.test(row.studentId)) rowErrors.push("Invalid ID");
-        if (!/^\d+$/.test(row.tranNumber)) rowErrors.push("Bad Tran #");
-        if (!/^\d+$/.test(row.detailCode)) rowErrors.push("Bad Code");
-        if (isNaN(Number(row.amount))) rowErrors.push("Bad Amount");
-        if (!/^\d{2}-[A-Z]{3}-\d{4}$/.test(row.effectiveDate))
-          rowErrors.push("Bad Date");
-
-        if (rowErrors.length) {
-          errorList.push({ row: parsed.length, issues: rowErrors });
+        // ✅ VALIDATION
+        if (!/^\d{9}$/.test(row.studentId)) {
+          row.errors.push("Invalid Student ID");
         }
 
-        row.errors = rowErrors;
+        if (!row.tranNumber) {
+          row.errors.push("Missing Tran Number");
+        }
+
+        if (!row.detailCode) {
+          row.errors.push("Missing Detail Code");
+        }
+
+        if (!row.amount || isNaN(Number(row.amount))) {
+          row.errors.push("Missing/Invalid Amount");
+        }
+
+        if (!/^\d{2}-[A-Z]{3}-\d{4}$/.test(row.effectiveDate)) {
+          row.errors.push("Invalid Date");
+        }
+
         parsed.push(row);
+
+        if (/^\d+$/.test(row.detailCode)) {
+          codesFound.add(row.detailCode);
+        }
       }
     }
 
+    pushEmptyStudent();
+
+    const codesArray = [...codesFound].sort();
+    const defaultMap = {};
+
+    codesArray.forEach((c) => {
+      defaultMap[c] = "Housing";
+    });
+
     setRows(parsed);
-    setErrors(errorList);
-    setUniqueCodes([...codesFound].sort());
+    setUniqueCodes(codesArray);
+    setCodeMap(defaultMap);
     setMappingComplete(false);
   };
 
   const readFile = (file) => {
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => parseFile(e.target.result);
     reader.readAsText(file);
@@ -84,19 +145,11 @@ export default function App() {
     readFile(e.dataTransfer.files[0]);
   };
 
-  // ✅ Handle dropdown mapping
   const updateCodeType = (code, type) => {
-    setCodeMap((prev) => ({ ...prev, [code]: type }));
-  };
-
-  // ✅ Check if all codes are assigned
-  const finalizeMapping = () => {
-    const allMapped = uniqueCodes.every((code) => codeMap[code]);
-    if (!allMapped) {
-      alert("Please assign all detail codes before continuing.");
-      return;
-    }
-    setMappingComplete(true);
+    setCodeMap((prev) => ({
+      ...prev,
+      [code]: type,
+    }));
   };
 
   const downloadCSV = () => {
@@ -110,6 +163,7 @@ export default function App() {
       "Description",
       "Amount",
       "Effective Date",
+      "Issues",
     ];
 
     const csvRows = [
@@ -121,15 +175,19 @@ export default function App() {
           r.firstName,
           r.tranNumber,
           r.detailCode,
-          codeMap[r.detailCode],
+          codeMap[r.detailCode] || "",
           `"${r.description}"`,
           r.amount,
           r.effectiveDate,
+          `"${[...r.errors, ...r.warnings].join("; ")}"`,
         ].join(",")
       ),
     ];
 
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const blob = new Blob([csvRows.join("\n")], {
+      type: "text/csv",
+    });
+
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement("a");
@@ -140,9 +198,8 @@ export default function App() {
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Banner LIS → CSV Converter</h2>
+      <h2>LIS → CSV Converter</h2>
 
-      {/* Upload */}
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
@@ -163,23 +220,23 @@ export default function App() {
       />
 
       <p>
-        Rows: {rows.length} | Errors: {errors.length}
+        Rows: {rows.length} | Errors:{" "}
+        {rows.filter((r) => r.errors.length).length} | Warnings:{" "}
+        {rows.filter((r) => r.warnings.length).length}
       </p>
 
-      {/* ✅ Step 2: Mapping UI */}
       {uniqueCodes.length > 0 && !mappingComplete && (
         <div>
           <h3>Assign Detail Code Types</h3>
 
           {uniqueCodes.map((code) => (
-            <div key={code} style={{ marginBottom: 10 }}>
+            <div key={code}>
               <strong>{code}</strong>
               <select
+                value={codeMap[code]}
                 onChange={(e) => updateCodeType(code, e.target.value)}
-                value={codeMap[code] || ""}
                 style={{ marginLeft: 10 }}
               >
-                <option value="">Select Type</option>
                 <option value="Housing">Housing</option>
                 <option value="Meal">Meal</option>
                 <option value="Other">Other</option>
@@ -187,18 +244,15 @@ export default function App() {
             </div>
           ))}
 
-          <button onClick={finalizeMapping}>
+          <button onClick={() => setMappingComplete(true)}>
             Confirm Mapping
           </button>
         </div>
       )}
 
-      {/* ✅ Table after mapping */}
       {mappingComplete && (
         <>
-          <button onClick={downloadCSV}>
-            Download CSV
-          </button>
+          <button onClick={downloadCSV}>Download CSV</button>
 
           <table border="1" cellPadding="5">
             <thead>
@@ -212,7 +266,7 @@ export default function App() {
                 <th>Description</th>
                 <th>Amount</th>
                 <th>Date</th>
-                <th>Errors</th>
+                <th>Issues</th>
               </tr>
             </thead>
             <tbody>
@@ -222,6 +276,8 @@ export default function App() {
                   style={{
                     backgroundColor: r.errors.length
                       ? "#ffe6e6"
+                      : r.warnings.length
+                      ? "#fff8e1"
                       : "white",
                   }}
                 >
@@ -230,12 +286,17 @@ export default function App() {
                   <td>{r.firstName}</td>
                   <td>{r.tranNumber}</td>
                   <td>{r.detailCode}</td>
-                  <td>{codeMap[r.detailCode]}</td>
+                  <td>{codeMap[r.detailCode] || ""}</td>
                   <td>{r.description}</td>
                   <td>{r.amount}</td>
                   <td>{r.effectiveDate}</td>
-                  <td style={{ color: "red" }}>
-                    {r.errors.join(", ")}
+                  <td>
+                    <div style={{ color: "red" }}>
+                      {r.errors.join(", ")}
+                    </div>
+                    <div style={{ color: "#b58900" }}>
+                      {r.warnings.join(", ")}
+                    </div>
                   </td>
                 </tr>
               ))}
